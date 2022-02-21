@@ -1,4 +1,5 @@
 
+
 // Include Libraries
 #include "Arduino.h"
 #include "SolenoidValve.h"
@@ -40,11 +41,23 @@ Sensor sensor4(SENSOR4_PIN10);
 const int timeout = 10000;       //define timeout of 10 sec
 const int printTimeout = 2000;   //define timeout of 1 sec
 uint32_t timer = millis();
+uint32_t openTimer1 = millis();
+uint32_t openTimer2 = millis();
+uint32_t openTimer3 = millis();
+uint32_t openTimer4 = millis();
+int openTimeout = 50;   //define timeout for opening time
+int serialCommand = 0;
+
+bool oneStarted = false;
+bool twoStarted = false;
+bool threeStarted = false;
+bool fourStarted = false;
 
 enum States {
   START_FIRST,
   START,
   RUNNING,
+  RUNNING_TIMERS,
   PRINT,
   STOPPED
 };
@@ -75,7 +88,6 @@ void setup()
 // Main logic
 void loop()
 {
-  uint32_t m_startTime;
   if (state == RUNNING)
   {
     // Sensor/valve1
@@ -123,6 +135,83 @@ void loop()
 
   }// RUNNING
 
+  if (state == RUNNING_TIMERS)
+  {
+    // Sensor/valve1
+    if (sensor1.isOn() && !oneStarted)
+    {
+      //Start OnTimer
+      openTimer1 = millis();
+      solenoidValve1.on();
+      oneStarted = true;
+    }
+    if (oneStarted && ((millis() - openTimer1) > openTimeout) )
+    {
+      solenoidValve1.off();
+    }
+    if (!solenoidValve1.getState() && sensor1.read() == LOW)
+    {
+      oneStarted = false;
+    }
+
+    // Sensor/valve2
+    if (sensor2.isOn() && !twoStarted)
+    {
+      //Start OnTimer
+      openTimer2 = millis();
+      solenoidValve2.on();
+      twoStarted = true;
+    }
+    if (twoStarted && ((millis() - openTimer2) > openTimeout) )
+    {
+      solenoidValve2.off();
+    }
+    if (!solenoidValve2.getState() && sensor2.read() == LOW)
+    {
+      twoStarted = false;
+    }
+    // Sensor/valve3
+    if (sensor3.isOn() && !threeStarted)
+    {
+      //Start OnTimer
+      openTimer3 = millis();
+      solenoidValve3.on();
+      threeStarted = true;
+    }
+    if (threeStarted && ((millis() - openTimer3) > openTimeout) )
+    {
+      solenoidValve3.off();
+    }
+    if (!solenoidValve3.getState() && sensor3.read() == LOW)
+    {
+      threeStarted = false;
+    }
+
+    // Sensor/valve4
+    if (sensor4.isOn() && !fourStarted)
+    {
+      //Start OnTimer
+      openTimer4 = millis();
+      solenoidValve4.on();
+      fourStarted = true;
+    }
+    if (fourStarted && ((millis() - openTimer4) > openTimeout) )
+    {
+      solenoidValve4.off();
+    }
+    if (!solenoidValve4.getState() && sensor4.read() == LOW)
+    {
+      fourStarted = false;
+    }
+
+    // Check if stop button is pressed or released
+    if (buttonStop.onPress() || buttonStop.onRelease())
+    {
+      state = STOPPED;
+    }
+
+  }// RUNNING_TIMERS
+
   else if (state == START)
   {
     if (sensor1.isOn() ||
@@ -130,7 +219,6 @@ void loop()
         sensor3.isOn() ||
         sensor4.isOn() )
     {
-      Serial.println(F("========== START =========="));
       state = RUNNING;
     }
   }//START
@@ -146,7 +234,6 @@ void loop()
         sensor3.isOn() ||
         sensor4.isOn() )
     {
-      Serial.println(F("======== START FIRST ========"));
       solenoidValve1.off();
       state = RUNNING;
     }
@@ -154,15 +241,23 @@ void loop()
 
   else if (state == STOPPED)
   {
+    //Serial.println(F("========== STOPPED =========="));
     allValvesOff();
 
     if (buttonStart.onPress())
     {
       state = START;
+      Serial.println(F("========== START =========="));
+
     }
     if (buttonStartFirst.onPress())
     {
-      state = START_FIRST;
+      //state = START_FIRST;
+      //Serial.println(F("========== START FIRST =========="));
+
+      state = RUNNING_TIMERS;
+      Serial.println(F("========== RUNNING_TIMERS =========="));
+
     }
   } // STOPPED
   else
@@ -172,11 +267,35 @@ void loop()
     state = STOPPED;
   }
 
+  // Check if stop button is pressed or released
+  if (buttonStop.onPress() || buttonStop.onRelease())
+  {
+    state = STOPPED;
+  }
+
+  // Read command from serial if available
+  if (Serial.available() > 0)
+  {
+    serialCommand = Serial.read();
+    Serial.print("command: ");
+    Serial.println(serialCommand);
+    if (serialCommand == 49)
+      openTimeout += 5;
+
+    if (serialCommand == 50)
+      openTimeout -= 5;
+
+    Serial.print("openTimeout: ");
+    Serial.println(openTimeout);
+    serialCommand = 0;
+
+  }
+
   //Check printer timer
   if (millis() - timer > printTimeout)
   {
     printTimes();
-    //printDebug();
+    // printDebug();
   }
 }
 
@@ -220,6 +339,7 @@ void printDebug()
       stateStr += "UNKNOWN";
       break;
   }
+
   Serial.println(stateStr);
 
   String sol1 = "Solenoid1: "; sol1 += (solenoidValve1.getState()) ? "ON" : "OFF";
